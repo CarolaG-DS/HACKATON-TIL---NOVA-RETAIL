@@ -6,5 +6,6 @@ sources:
     schema: BRONZE
     tables:
       - name: RAW_SALES_TRANSACTIONS
-      - name: RAW_WEB_REVIEWS
       - name: RAW_FINANCE_TARGETS
+      - name: RAW_WEB_REVIEWS
+      - name: RAW_EXCHANGE_RATES

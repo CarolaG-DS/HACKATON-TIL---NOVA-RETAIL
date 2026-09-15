@@ -2,25 +2,73 @@
 
 WITH sales AS (
     SELECT * FROM {{ ref('stg_sales_transactions') }}
+),
+fx AS (
+    SELECT * FROM {{ ref('stg_exchange_rates') }}
+),
+targets AS (
+    SELECT DISTINCT 
+        product_category,
+        region
+    FROM {{ ref('stg_finance_targets') }}
+),
+sales_converted AS (
+    SELECT
+        s.order_id,
+        s.transaction_date,
+        MD5(LOWER(TRIM(s.customer_email))) AS customer_id,
+        s.customer_name,
+        s.customer_email,
+        s.customer_phone,
+        
+        t.region,
+
+        s.product_id,
+        s.product_category,
+        s.quantity,
+        s.is_return,
+        CAST(s.discount_percentage AS NUMBER(5,2)) AS discount_percentage,
+        
+        CAST(
+            s.unit_price / COALESCE(fx.exchange_rate_to_eur, 1.0000) 
+            AS NUMBER(10,2)
+        ) AS unit_price
+    FROM sales s
+    LEFT JOIN fx 
+        ON UPPER(TRIM(s.currency_code)) = UPPER(TRIM(fx.currency_code))
+    LEFT JOIN targets t
+        ON LOWER(TRIM(s.product_category)) = LOWER(TRIM(t.product_category))
+    WHERE s.transaction_date IS NOT NULL
 )
 
 SELECT
     order_id,
     transaction_date,
-    MD5(LOWER(customer_email)) AS customer_id,
+    customer_id,
+    customer_name,
+    customer_email,
+    customer_phone,
+    region,
     product_id,
     product_category,
     unit_price,
     quantity,
     is_return,
     discount_percentage,
-    
-    -- Calcolo metriche finanziarie
-    (unit_price * quantity) AS gross_revenue,
-    (unit_price * quantity * discount_percentage) AS discount_amount,
-    CASE 
-        WHEN is_return THEN 0
-        ELSE (unit_price * quantity * (1 - discount_percentage))
-    END AS net_revenue
 
-FROM sales
+    CAST(
+        (unit_price * quantity) 
+        AS NUMBER(10,2)
+    ) AS gross_revenue,
+
+    CAST(
+        (unit_price * quantity * discount_percentage) 
+        AS NUMBER(10,2)
+    ) AS discount_amount,
+
+    CAST(
+        (unit_price * quantity * (1.00 - discount_percentage)) 
+        AS NUMBER(10,2)
+    ) AS net_revenue
+
+FROM sales_converted
