@@ -2,25 +2,57 @@
 
 WITH sales AS (
     SELECT * FROM {{ ref('stg_sales_transactions') }}
+),
+targets AS (
+    SELECT DISTINCT product_category, region 
+    FROM {{ ref('stg_finance_targets') }}
+),
+fx AS (
+    SELECT * FROM {{ ref('stg_exchange_rates') }}
 )
 
 SELECT
-    order_id,
-    transaction_date,
-    MD5(LOWER(customer_email)) AS customer_id,
-    product_id,
-    product_category,
-    unit_price,
-    quantity,
-    is_return,
-    discount_percentage,
+    s.order_id,
+    s.transaction_date,
+    MD5(LOWER(s.customer_email)) AS customer_id,
+    s.product_id,
+    s.product_category,
+    COALESCE(t.region, 'Unknown') AS region,
     
-    -- Calcolo metriche finanziarie
-    (unit_price * quantity) AS gross_revenue,
-    (unit_price * quantity * discount_percentage) AS discount_amount,
+    -- Mapping Valuta Locale sulle Region effettive
     CASE 
-        WHEN is_return THEN 0
-        ELSE (unit_price * quantity * (1 - discount_percentage))
-    END AS net_revenue
+        WHEN t.region = 'EMEA'  THEN 'EUR'
+        WHEN t.region = 'NA'    THEN 'USD'
+        WHEN t.region = 'APAC'  THEN 'USD'
+        WHEN t.region = 'LATAM' THEN 'USD'
+        ELSE 'EUR'
+    END AS local_currency_code,
+    
+    s.unit_price,
+    s.quantity,
+    s.is_return,
+    s.discount_percentage,
+    
+    -- Ricavo Netto Valuta Locale
+    CASE 
+        WHEN s.is_return THEN 0
+        ELSE (s.unit_price * s.quantity * (1 - s.discount_percentage))
+    END AS net_revenue_local,
 
-FROM sales
+    -- Ricavo Netto Uniformato in EUR (per vista globale "ALL")
+    CASE 
+        WHEN s.is_return THEN 0
+        ELSE (s.unit_price * s.quantity * (1 - s.discount_percentage)) / COALESCE(fx.exchange_rate_to_eur, 1.0)
+    END AS net_revenue_eur
+
+FROM sales s
+LEFT JOIN targets t 
+    ON s.product_category = t.product_category
+LEFT JOIN fx 
+    ON fx.currency_code = CASE 
+        WHEN t.region = 'EMEA'  THEN 'EUR'
+        WHEN t.region = 'NA'    THEN 'USD'
+        WHEN t.region = 'APAC'  THEN 'USD'
+        WHEN t.region = 'LATAM' THEN 'USD'
+        ELSE 'EUR'
+    END

@@ -1,4 +1,8 @@
-SELECT order_id, net_revenue
+-- Verifica che il net revenue (sia locale che EUR) sia sempre >= 0
+SELECT
+    order_id,
+    net_revenue_local,
+    net_revenue_eur
 FROM {{ ref('fct_sales') }}
-WHERE is_return = FALSE
-  AND net_revenue < 0
+WHERE net_revenue_local < 0 
+   OR net_revenue_eur < 0
