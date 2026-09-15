@@ -1,35 +1,92 @@
-{{ config(materialized='table', schema='GOLD') }}
+{{ config(
+    materialized='table',
+    schema='GOLD'
+) }}
 
-WITH actual_sales AS (
+WITH sales AS (
+
     SELECT
-        DATE_TRUNC('month', transaction_date) AS sales_month,
+        order_id,
+        transaction_date,
         product_category,
-        SUM(net_revenue) AS total_actual_revenue,
-        COUNT(DISTINCT order_id) AS total_orders
+        customer_email,
+        revenue_eur
     FROM {{ ref('fct_sales') }}
-    WHERE transaction_date IS NOT NULL
-    GROUP BY 1, 2
+
 ),
 
-finance_targets AS (
+customers AS (
+
     SELECT
-        target_month,
+        customer_email,
+        country
+    FROM {{ ref('dim_customers') }}
+
+),
+
+region_mapping AS (
+
+    SELECT
+        country,
+        region
+    FROM {{ ref('dim_region_mapping') }}
+
+),
+
+sales_with_region AS (
+
+    SELECT
+        s.order_id,
+        s.transaction_date,
+        s.product_category,
+        s.revenue_eur,
+        rm.region
+    FROM sales s
+
+    LEFT JOIN customers c
+        ON LOWER(TRIM(s.customer_email))
+         = LOWER(TRIM(c.customer_email))
+
+    LEFT JOIN region_mapping rm
+        ON UPPER(TRIM(c.country))
+         = rm.country
+
+),
+
+monthly AS (
+
+    SELECT
+        DATE_TRUNC('MONTH', transaction_date) AS month,
+        region,
         product_category,
-        SUM(target_amount) AS total_target_revenue
-    FROM {{ ref('stg_finance_targets') }}
-    WHERE target_month IS NOT NULL
-    GROUP BY 1, 2
+
+        COUNT(DISTINCT order_id) AS orders,
+
+        ROUND(SUM(revenue_eur), 2) AS revenue_eur,
+
+        ROUND(SUM(revenue_eur) * 0.30, 2) AS profit_eur,
+
+        ROUND(
+            SUM(revenue_eur)
+            / NULLIF(COUNT(DISTINCT order_id), 0),
+            2
+        ) AS aov_eur
+
+    FROM sales_with_region
+
+    WHERE transaction_date IS NOT NULL
+      AND revenue_eur IS NOT NULL
+
+    GROUP BY
+        DATE_TRUNC('MONTH', transaction_date),
+        region,
+        product_category
+
 )
 
-SELECT
-    COALESCE(s.sales_month, t.target_month) AS performance_month,
-    COALESCE(s.product_category, t.product_category) AS product_category,
-    COALESCE(s.total_actual_revenue, 0.00) AS total_actual_revenue,
-    COALESCE(t.total_target_revenue, 0.00) AS total_target_revenue,
-    (COALESCE(s.total_actual_revenue, 0.00) - COALESCE(t.total_target_revenue, 0.00)) AS variance_to_target,
-    COALESCE(s.total_orders, 0) AS total_orders
-FROM actual_sales s
-FULL OUTER JOIN finance_targets t
-    ON s.sales_month = t.target_month
-   AND LOWER(s.product_category) = LOWER(t.product_category)
-WHERE COALESCE(s.sales_month, t.target_month) IS NOT NULL
+SELECT *
+FROM monthly
+ORDER BY
+    month,
+    region,
+    product_category

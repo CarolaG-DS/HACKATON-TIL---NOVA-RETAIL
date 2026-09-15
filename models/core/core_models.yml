@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: dim_customers
-    description: "Unique customer dimension derived from sales transactions including first and latest purchase dates."
+    description: "Unique customer dimension derived from sales transactions, enriched with country/city from web reviews and including first/latest purchase dates."
     columns:
       - name: customer_id
         description: "Primary key hashed via MD5 using customer email."
@@ -13,6 +13,16 @@ models:
         description: "Unique email address of the customer."
         data_tests:
           - not_null
+      - name: country
+        description: "Customer country, sourced from the most recent web review left by that email (may be null if the customer never left a review)."
+      - name: city
+        description: "Customer city, sourced from the most recent web review left by that email."
+      - name: first_order_date
+        description: "Date of the customer's first transaction."
+      - name: most_recent_order_date
+        description: "Date of the customer's most recent transaction."
+      - name: total_orders
+        description: "Distinct count of orders placed by the customer."
 
   - name: dim_products
     description: "Unified product catalog enriched with web review metrics (average rating and review count)."
@@ -25,8 +35,21 @@ models:
       - name: product_category
         description: "Category of the product."
 
+  - name: dim_region_mapping
+    description: "Static lookup mapping ISO country codes to sales regions (NA, EMEA, APAC, LATAM), used to derive region for customers and monthly performance reporting."
+    columns:
+      - name: country
+        description: "ISO-2 country code."
+        data_tests:
+          - unique
+          - not_null
+      - name: region
+        description: "Sales region assigned to the country."
+        data_tests:
+          - not_null
+
   - name: fct_sales
-    description: "Transactional sales fact table containing calculated financial metrics (gross revenue, discount amount, net revenue)."
+    description: "Transactional sales fact table containing calculated financial metrics in original currency and normalized to EUR."
     columns:
       - name: order_id
         description: "Transaction/order unique identifier."
@@ -39,17 +62,40 @@ models:
               arguments:
                 to: ref('dim_customers')
                 field: customer_id
+      - name: product_id
+        description: "Foreign key referencing dim_products."
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+      - name: currency_code
+        description: "Currency of the original transaction (EUR, USD, GBP), inferred from the raw price symbol. Known to be null for 3 rows where the source price string had no recognizable currency symbol — accepted as a data quality edge case, not tested as not_null by design."
       - name: net_revenue
-        description: "Net revenue calculated after applying discounts and set to 0 for returns."
+        description: "Net revenue in original currency after applying discounts and set to 0 (or negative for returns) for returned orders."
+      - name: exchange_rate_to_eur
+        description: "Exchange rate applied to convert net_revenue into EUR, joined from RAW_EXCHANGE_RATES. Null for the same 3 rows with unrecognized currency_code, since no rate can be joined."
+      - name: revenue_eur
+        description: "Net revenue normalized to EUR (net_revenue * exchange_rate_to_eur). Null for the 3 rows above; excluded from EUR-based aggregations downstream."
 
   - name: fct_monthly_performance
-    description: "Monthly aggregation table comparing actual sales performance against financial targets per product category."
+    description: "Monthly aggregation of actual sales performance by region and product category, derived from fct_sales joined with dim_customers and dim_region_mapping."
     columns:
-      - name: performance_month
-        description: "Reference month for performance reporting."
+      - name: month
+        description: "Reference month for performance reporting (truncated to first of month)."
         data_tests:
           - not_null
+      - name: region
+        description: "Sales region derived from the customer's country via dim_region_mapping. May be null when the customer has no matching review/country or the country isn't in the mapping."
       - name: product_category
         description: "Product category evaluated."
-      - name: variance_to_target
-        description: "Variance between actual revenue and financial target (Actual - Target)."
+      - name: orders
+        description: "Distinct count of orders in the period."
+      - name: revenue_eur
+        description: "Actual net revenue in EUR for the period."
+        data_tests:
+          - not_null
+      - name: profit_eur
+        description: "Estimated profit assuming a uniform 30% margin on revenue_eur."
+      - name: aov_eur
+        description: "Average order value in EUR for the period (revenue_eur / orders)."
