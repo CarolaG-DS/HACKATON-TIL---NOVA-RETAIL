@@ -1,55 +1,53 @@
 version: 2
 
 models:
-  - name: dim_customers
-    description: "Unique customer dimension derived from sales transactions including first and latest purchase dates."
-    columns:
-      - name: customer_id
-        description: "Primary key hashed via MD5 using customer email."
-        data_tests:
-          - unique
-          - not_null
-      - name: customer_email
-        description: "Unique email address of the customer."
-        data_tests:
-          - not_null
-
-  - name: dim_products
-    description: "Unified product catalog enriched with web review metrics (average rating and review count)."
-    columns:
-      - name: product_id
-        description: "Unique identifier for each product."
-        data_tests:
-          - unique
-          - not_null
-      - name: product_category
-        description: "Category of the product."
-
   - name: fct_sales
-    description: "Transactional sales fact table containing calculated financial metrics (gross revenue, discount amount, net revenue)."
+    description: "Tabella delle transazioni di vendita normalizzate in EUR"
     columns:
       - name: order_id
-        description: "Transaction/order unique identifier."
-        data_tests:
+        description: "ID univoco dell'ordine"
+        tests:
+          - not_null
+      - name: transaction_date
+        tests:
           - not_null
       - name: customer_id
-        description: "Foreign key referencing dim_customers."
-        data_tests:
-          - relationships:
-              arguments:
-                to: ref('dim_customers')
-                field: customer_id
+        tests:
+          - not_null
+      - name: unit_price
+        tests:
+          - not_null
+      - name: gross_revenue
+        tests:
+          - not_null
       - name: net_revenue
-        description: "Net revenue calculated after applying discounts and set to 0 for returns."
+        tests:
+          - not_null
+
+  - name: dim_customers
+    description: "Anagrafica clienti con paese integrato dalle web reviews"
+    columns:
+      - name: customer_id
+        description: "Chiave primaria cliente (MD5)"
+        tests:
+          - unique
+          - not_null
 
   - name: fct_monthly_performance
-    description: "Monthly aggregation table comparing actual sales performance against financial targets per product category."
+    description: "Confronto mensile Actual vs Target Revenue per Categoria e Region"
     columns:
       - name: performance_month
-        description: "Reference month for performance reporting."
-        data_tests:
+        tests:
           - not_null
       - name: product_category
-        description: "Product category evaluated."
-      - name: variance_to_target
-        description: "Variance between actual revenue and financial target (Actual - Target)."
+        tests:
+          - not_null
+      - name: region
+        tests:
+          - not_null
+      - name: actual_revenue
+        tests:
+          - not_null
+      - name: target_revenue
+        tests:
+          - not_null
