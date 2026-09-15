@@ -1,55 +1,85 @@
 version: 2
 
 models:
-  - name: dim_customers
-    description: "Unique customer dimension derived from sales transactions including first and latest purchase dates."
-    columns:
-      - name: customer_id
-        description: "Primary key hashed via MD5 using customer email."
-        data_tests:
-          - unique
-          - not_null
-      - name: customer_email
-        description: "Unique email address of the customer."
-        data_tests:
-          - not_null
-
-  - name: dim_products
-    description: "Unified product catalog enriched with web review metrics (average rating and review count)."
-    columns:
-      - name: product_id
-        description: "Unique identifier for each product."
-        data_tests:
-          - unique
-          - not_null
-      - name: product_category
-        description: "Category of the product."
 
   - name: fct_sales
-    description: "Transactional sales fact table containing calculated financial metrics (gross revenue, discount amount, net revenue)."
+    description: "Gold fact table at order level."
+
     columns:
+
       - name: order_id
-        description: "Transaction/order unique identifier."
-        data_tests:
+        description: "Unique sales order identifier."
+        tests:
           - not_null
-      - name: customer_id
-        description: "Foreign key referencing dim_customers."
-        data_tests:
-          - relationships:
+          - unique
+
+      - name: product_id
+        description: "Product identifier."
+        tests:
+          - not_null
+
+      - name: quantity
+        description: "Absolute quantity sold. Returns are flagged separately."
+        tests:
+          - not_null
+
+      - name: unit_price
+        description: "Unit price in the original transaction currency."
+        tests:
+          - not_null
+
+      - name: discount_percentage
+        description: "Normalized discount expressed as a decimal between 0 and 1."
+        tests:
+          - not_null
+
+      - name: currency_code
+        description: "Original transaction currency."
+        tests:
+          - accepted_values:
               arguments:
-                to: ref('dim_customers')
-                field: customer_id
+                values:
+                  - USD
+                  - EUR
+                  - GBP
+
       - name: net_revenue
-        description: "Net revenue calculated after applying discounts and set to 0 for returns."
+        description: "Net revenue after discount, with returns represented as negative revenue."
+        tests:
+          - not_null
+
 
   - name: fct_monthly_performance
-    description: "Monthly aggregation table comparing actual sales performance against financial targets per product category."
+    description: "Monthly Gold performance aggregated by month and product category."
+
     columns:
-      - name: performance_month
-        description: "Reference month for performance reporting."
-        data_tests:
+
+      - name: month
+        description: "First day of the reporting month."
+        tests:
           - not_null
+
       - name: product_category
-        description: "Product category evaluated."
-      - name: variance_to_target
-        description: "Variance between actual revenue and financial target (Actual - Target)."
+        description: "Product category used for monthly aggregation."
+        tests:
+          - not_null
+
+      - name: orders
+        description: "Distinct number of orders in the month and product category."
+        tests:
+          - not_null
+
+      - name: revenue_eur
+        description: "Total net revenue converted to EUR."
+        tests:
+          - not_null
+
+      - name: profit_eur
+        description: "Profit calculated as 30% of revenue."
+        tests:
+          - not_null
+
+      - name: aov_eur
+        description: "Average order value calculated as revenue divided by distinct orders."
+        tests:
+          - not_null
