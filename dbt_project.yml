@@ -1,0 +1,29 @@
+name: 'nova_retail'
+version: '1.0.0'
+config-version: 2
+
+# Profile utilizzato per la connessione a Snowflake
+profile: 'default'
+
+# Percorsi delle cartelle del progetto dbt
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Configurazione globale delle strutture logiche (Silver e Gold)
+models:
+  nova_retail:
+    staging:
+      +materialized: table
+      +schema: SILVER
+    core:
+      +materialized: table
+      +schema: GOLD

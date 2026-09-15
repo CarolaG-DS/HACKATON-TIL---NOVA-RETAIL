@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: bronze
+    database: NOVA_RETAIL
+    schema: BRONZE
+    tables:
+      - name: RAW_SALES_TRANSACTIONS
+      - name: RAW_WEB_REVIEWS
+      - name: RAW_FINANCE_TARGETS
