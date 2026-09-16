@@ -1,3 +1,3 @@
-SELECT customer_id, first_order_date, most_recent_order_date
-FROM {{ ref('dim_customers') }}
+SELECT *
+FROM {{ ref('dim_customer') }}
 WHERE first_order_date > most_recent_order_date

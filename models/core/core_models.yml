@@ -1,55 +1,231 @@
 version: 2
 
 models:
-  - name: dim_customers
-    description: "Unique customer dimension derived from sales transactions including first and latest purchase dates."
-    columns:
-      - name: customer_id
-        description: "Primary key hashed via MD5 using customer email."
-        data_tests:
-          - unique
-          - not_null
-      - name: customer_email
-        description: "Unique email address of the customer."
-        data_tests:
-          - not_null
 
-  - name: dim_products
-    description: "Unified product catalog enriched with web review metrics (average rating and review count)."
-    columns:
-      - name: product_id
-        description: "Unique identifier for each product."
-        data_tests:
-          - unique
-          - not_null
-      - name: product_category
-        description: "Category of the product."
+  # ============================================================
+  # FACT: SALES
+  # Grain: 1 row = 1 order
+  # ============================================================
 
   - name: fct_sales
-    description: "Transactional sales fact table containing calculated financial metrics (gross revenue, discount amount, net revenue)."
-    columns:
-      - name: order_id
-        description: "Transaction/order unique identifier."
-        data_tests:
-          - not_null
-      - name: customer_id
-        description: "Foreign key referencing dim_customers."
-        data_tests:
-          - relationships:
-              arguments:
-                to: ref('dim_customers')
-                field: customer_id
-      - name: net_revenue
-        description: "Net revenue calculated after applying discounts and set to 0 for returns."
+    description: "Gold fact table at order level."
 
-  - name: fct_monthly_performance
-    description: "Monthly aggregation table comparing actual sales performance against financial targets per product category."
     columns:
-      - name: performance_month
-        description: "Reference month for performance reporting."
-        data_tests:
+
+      - name: order_id
+        description: "Unique sales order identifier."
+        tests:
           - not_null
+          - unique
+
+      - name: transaction_date
+        description: "Normalized transaction date. Missing or unresolved source dates are retained as NULL."
+
+      - name: customer_id
+        description: "Surrogate customer identifier generated from customer email."
+        tests:
+          - not_null
+
+      - name: customer_email
+        description: "Normalized customer email used to link sales to the customer dimension."
+        tests:
+          - not_null
+
+      - name: product_id
+        description: "Product identifier."
+        tests:
+          - not_null
+
       - name: product_category
-        description: "Product category evaluated."
-      - name: variance_to_target
-        description: "Variance between actual revenue and financial target (Actual - Target)."
+        description: "Product category."
+        tests:
+          - not_null
+
+      - name: currency_code
+        description: "Original transaction currency."
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - USD
+                  - EUR
+                  - GBP
+
+      - name: unit_price
+        description: "Unit price in the original transaction currency."
+        tests:
+          - not_null
+
+      - name: quantity
+        description: "Absolute quantity sold. Returns are flagged separately."
+        tests:
+          - not_null
+
+      - name: discount_percentage
+        description: "Normalized discount expressed as a decimal between 0 and 1."
+        tests:
+          - not_null
+
+      - name: gross_revenue
+        description: "Gross revenue before discounts."
+        tests:
+          - not_null
+
+      - name: discount_amount
+        description: "Discount amount applied to the transaction."
+        tests:
+          - not_null
+
+      - name: net_revenue
+        description: "Net revenue after discount, with returns represented as negative revenue."
+        tests:
+          - not_null
+
+      - name: exchange_rate_to_eur
+        description: "Exchange rate used to convert the transaction currency to EUR."
+
+      - name: revenue_eur
+        description: "Net revenue converted to EUR using the available exchange rate."
+
+
+  # ============================================================
+  # FACT: FINANCE TARGETS
+  # Grain: 1 row = 1 month + region + product category
+  # ============================================================
+
+  - name: fct_finance_targets
+    description: "Gold finance target fact at monthly, region and product category grain."
+
+    columns:
+
+      - name: month
+        description: "First day of the target month."
+        tests:
+          - not_null
+
+      - name: region
+        description: "Business region."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - NA
+                  - EMEA
+                  - APAC
+                  - LATAM
+
+      - name: product_category
+        description: "Product category."
+        tests:
+          - not_null
+
+      - name: target_amount
+        description: "Monthly revenue target amount."
+        tests:
+          - not_null
+
+
+  # ============================================================
+  # DIMENSION: CUSTOMER
+  # Grain: 1 row = 1 customer
+  # ============================================================
+
+  - name: dim_customer
+    description: "Gold customer dimension with customer profile and latest known review location."
+
+    columns:
+
+      - name: customer_id
+        description: "Surrogate customer identifier generated from customer email."
+        tests:
+          - not_null
+          - unique
+
+      - name: customer_name
+        description: "Customer full name."
+        tests:
+          - not_null
+
+      - name: customer_email
+        description: "Normalized customer email."
+        tests:
+          - not_null
+          - unique
+
+      - name: customer_phone
+        description: "Customer phone number."
+
+      - name: country
+        description: "Country from the customer's latest available review."
+
+      - name: city
+        description: "City from the customer's latest available review."
+
+      - name: first_order_date
+        description: "Date of the customer's first order."
+
+      - name: most_recent_order_date
+        description: "Date of the customer's most recent order."
+
+      - name: total_orders
+        description: "Total number of distinct orders for the customer."
+        tests:
+          - not_null
+
+
+  # ============================================================
+  # DIMENSION: PRODUCTS
+  # Grain: 1 row = 1 product
+  # ============================================================
+
+  - name: dim_products
+    description: "Gold product dimension enriched with review metrics."
+
+    columns:
+
+      - name: product_id
+        description: "Unique product identifier."
+        tests:
+          - not_null
+          - unique
+
+      - name: product_category
+        description: "Product category."
+
+      - name: avg_rating
+        description: "Average customer rating for the product."
+
+      - name: total_reviews
+        description: "Total number of reviews for the product."
+        tests:
+          - not_null
+
+
+  # ============================================================
+  # REFERENCE DIMENSION: REGION MAPPING
+  # Grain: 1 row = 1 country
+  # ============================================================
+
+  - name: dim_region_mapping
+    description: "Reference mapping between customer country and business region."
+
+    columns:
+
+      - name: country
+        description: "Country code used for the regional mapping."
+        tests:
+          - not_null
+          - unique
+
+      - name: region
+        description: "Business region associated with the country."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - NA
+                  - EMEA
+                  - APAC
+                  - LATAM
